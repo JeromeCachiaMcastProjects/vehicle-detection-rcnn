@@ -1,0 +1,7 @@
+﻿data/raw/
+__pycache__/
+*.pyc
+*.pt
+*.pth
+venv/
+.env
