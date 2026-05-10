@@ -96,7 +96,7 @@ def train_one_epoch(model, optimizer, loader, device, fold, epoch, total_epochs)
     total_loss = 0.0
     bar = tqdm(loader, desc=f"Fold {fold} | Epoch {epoch}/{total_epochs} [Train]",
                unit="batch", dynamic_ncols=True)
-    for images, targets in bar:
+    for i, (images, targets) in enumerate(bar, start=1):
         images = [img.to(device) for img in images]
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         loss_dict = model(images, targets)
@@ -105,7 +105,7 @@ def train_one_epoch(model, optimizer, loader, device, fold, epoch, total_epochs)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
-        bar.set_postfix(loss=f"{loss.item():.4f}", avg=f"{total_loss/bar.n:.4f}")
+        bar.set_postfix(loss=f"{loss.item():.4f}", avg=f"{total_loss/i:.4f}")
     return total_loss / len(loader)
 
 # ── Evaluate ──────────────────────────────────────────────────────────────────
