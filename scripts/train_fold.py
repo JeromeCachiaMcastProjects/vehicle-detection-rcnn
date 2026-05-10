@@ -11,12 +11,16 @@ from PIL import Image
 from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
+import random
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 class VehicleDataset(Dataset):
-    def __init__(self, ann_file, img_root):
+    def __init__(self, ann_file, img_root, max_images=None):
         self.coco = COCO(ann_file)
         self.img_ids = list(self.coco.imgs.keys())
+        if max_images is not None:
+            random.seed(42)
+            self.img_ids = random.sample(self.img_ids, min(max_images, len(self.img_ids)))
         self.img_root = Path(img_root)
 
     def __len__(self):
@@ -86,6 +90,9 @@ def collate_fn(batch):
 # ── Model ─────────────────────────────────────────────────────────────────────
 def get_model(num_classes):
     model = fasterrcnn_resnet50_fpn(weights=FasterRCNN_ResNet50_FPN_Weights.DEFAULT)
+    # Freeze backbone — only train the RPN and detection head
+    for param in model.backbone.parameters():
+        param.requires_grad = False
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
     return model
@@ -168,8 +175,8 @@ def main():
 
     print(f"Fold {args.fold} | Device: {device}")
 
-    train_ds = VehicleDataset(fold_dir / "train_annotations.json", img_root)
-    val_ds   = VehicleDataset(fold_dir / "val_annotations.json",   img_root)
+    train_ds = VehicleDataset(fold_dir / "train_annotations.json", img_root, max_images=1600)
+    val_ds   = VehicleDataset(fold_dir / "val_annotations.json",   img_root, max_images=400)
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size,
                               shuffle=True,  num_workers=0, collate_fn=collate_fn)
