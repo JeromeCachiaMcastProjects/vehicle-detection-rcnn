@@ -10,6 +10,7 @@ import torchvision.transforms.functional as TF
 from PIL import Image
 from pathlib import Path
 import pandas as pd
+from tqdm import tqdm
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 class VehicleDataset(Dataset):
@@ -90,10 +91,12 @@ def get_model(num_classes):
     return model
 
 # ── Train one epoch ───────────────────────────────────────────────────────────
-def train_one_epoch(model, optimizer, loader, device):
+def train_one_epoch(model, optimizer, loader, device, fold, epoch, total_epochs):
     model.train()
     total_loss = 0.0
-    for images, targets in loader:
+    bar = tqdm(loader, desc=f"Fold {fold} | Epoch {epoch}/{total_epochs} [Train]",
+               unit="batch", dynamic_ncols=True)
+    for images, targets in bar:
         images = [img.to(device) for img in images]
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
         loss_dict = model(images, targets)
@@ -102,16 +105,19 @@ def train_one_epoch(model, optimizer, loader, device):
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
+        bar.set_postfix(loss=f"{loss.item():.4f}", avg=f"{total_loss/bar.n:.4f}")
     return total_loss / len(loader)
 
 # ── Evaluate ──────────────────────────────────────────────────────────────────
-def evaluate(model, loader, device, coco_gt):
+def evaluate(model, loader, device, coco_gt, fold, epoch, total_epochs):
     model.eval()
     results = []
     inference_times = []
 
+    bar = tqdm(loader, desc=f"Fold {fold} | Epoch {epoch}/{total_epochs} [Val]  ",
+               unit="batch", dynamic_ncols=True)
     with torch.no_grad():
-        for images, targets in loader:
+        for images, targets in bar:
             images = [img.to(device) for img in images]
             t0 = time.perf_counter()
             outputs = model(images)
@@ -145,8 +151,6 @@ def evaluate(model, loader, device, coco_gt):
     ev.summarize()
 
     return ev.stats[0], ev.stats[1], ev.stats[8], avg_ms
-    # mAP@0.50:0.95, mAP@0.50, mAR, avg_ms
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser()
@@ -182,11 +186,11 @@ def main():
     rows = []
     for epoch in range(args.epochs):
         print(f"\n[Fold {args.fold}] Epoch {epoch+1}/{args.epochs}")
-        loss = train_one_epoch(model, optimizer, train_loader, device)
+        loss = train_one_epoch(model, optimizer, train_loader, device, args.fold, epoch + 1, args.epochs)
         scheduler.step()
 
         coco_gt = COCO(str(fold_dir / "val_annotations.json"))
-        mAP, mAP50, mAR, ms = evaluate(model, val_loader, device, coco_gt)
+        mAP, mAP50, mAR, ms = evaluate(model, val_loader, device, coco_gt, args.fold, epoch + 1, args.epochs)
 
         print(f"  Loss={loss:.4f}  mAP={mAP:.4f}  mAP@50={mAP50:.4f}  "
               f"mAR={mAR:.4f}  Inference={ms:.1f}ms/img")
