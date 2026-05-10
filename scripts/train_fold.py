@@ -25,13 +25,32 @@ class VehicleDataset(Dataset):
         img_id = self.img_ids[idx]
         img_info = self.coco.imgs[img_id]
         img_path = None
-        for split in ["train", "valid", "test"]:
-            candidate = self.img_root / split / img_info["file_name"]
+
+        # Try the split_source recorded during fold preparation first
+        split_source = img_info.get("split_source")
+        if split_source:
+            candidate = self.img_root / split_source / img_info["file_name"]
             if candidate.exists():
                 img_path = candidate
-                break
+
+        # Fall back: search all split folders
         if img_path is None:
-            img_path = self.img_root / img_info["file_name"]
+            for split in ["train", "valid", "test"]:
+                candidate = self.img_root / split / img_info["file_name"]
+                if candidate.exists():
+                    img_path = candidate
+                    break
+
+        # Last resort: recursive search by filename only
+        if img_path is None:
+            matches = list(self.img_root.rglob(img_info["file_name"]))
+            if matches:
+                img_path = matches[0]
+
+        if img_path is None:
+            raise FileNotFoundError(
+                f"Could not find image: {img_info['file_name']} anywhere under {self.img_root}"
+            )
 
         image = Image.open(img_path).convert("RGB")
         image = TF.to_tensor(image)
